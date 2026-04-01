@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BugReproducer Metrics</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: #fff9f2;
+      --ink: #221f1a;
+      --accent: #ca5d1f;
+      --muted: #5e5a52;
+      --ok: #287a4c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 10%, #ffe3c9 0%, transparent 35%),
+        radial-gradient(circle at 90% 85%, #ffd9b8 0%, transparent 30%),
+        var(--bg);
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+      padding: 24px;
+    }
+    h1 { margin: 0 0 20px 0; letter-spacing: 0.02em; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid #ead6c2;
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 6px 18px rgba(41, 29, 15, 0.06);
+    }
+    .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .v { font-size: 27px; margin-top: 6px; color: var(--accent); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #ead6c2;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid #efe2d5;
+      font-size: 14px;
+    }
+    th { background: #f8ede1; }
+    tr:last-child td { border-bottom: none; }
+    .ok { color: var(--ok); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>BugReproducer Impact Dashboard</h1>
+  <div class="grid">
+    <div class="card"><div class="k">Total Bugs</div><div class="v">2</div></div>
+    <div class="card"><div class="k">Auto Reproduced</div><div class="v">1</div></div>
+    <div class="card"><div class="k">Replay Success Rate</div><div class="v">50.0%</div></div>
+    <div class="card"><div class="k">Avg Debug Time Before</div><div class="v">105.0m</div></div>
+    <div class="card"><div class="k">Avg Debug Time After</div><div class="v">21.5m</div></div>
+    <div class="card"><div class="k">Avg Time Saved</div><div class="v">83.5m</div></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Bug ID</th>
+        <th>Captured At</th>
+        <th>Replayed</th>
+        <th>Before (min)</th>
+        <th>After (min)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+          <td>cap_1775001745965_342d9dfc</td>
+          <td>2026-04-01T00:02:25.966Z</td>
+          <td class="">no</td>
+          <td>120</td>
+          <td>25</td>
+        </tr>
+<tr>
+          <td>cap_1775003513128_1b929089</td>
+          <td>2026-04-01T00:31:53.128Z</td>
+          <td class="ok">yes</td>
+          <td>90</td>
+          <td>18</td>
+        </tr>
+    </tbody>
+  </table>
+</body>
+</html>
