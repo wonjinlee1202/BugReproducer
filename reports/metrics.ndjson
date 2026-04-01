@@ -1,0 +1,2 @@
+{"bugId":"cap_1775001745965_342d9dfc","capturedAt":"2026-04-01T00:02:25.966Z","replayedAt":"2026-04-01T00:02:53.673Z","replaySuccess":false,"baselineDebugMinutes":120,"replayDebugMinutes":25}
+{"bugId":"cap_1775003513128_1b929089","capturedAt":"2026-04-01T00:31:53.128Z","replayedAt":"2026-04-01T02:56:51.474Z","replaySuccess":true,"baselineDebugMinutes":90,"replayDebugMinutes":18}

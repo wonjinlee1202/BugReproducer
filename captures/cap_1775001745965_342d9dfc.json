@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "captureId": "cap_1775001745965_342d9dfc",
+  "app": "checkout-service",
+  "operation": "checkout",
+  "capturedAt": "2026-04-01T00:02:25.966Z",
+  "deterministic": {
+    "seed": 2211564915,
+    "epochMs": 1775001745965,
+    "tickMs": 3,
+    "timezone": "UTC"
+  },
+  "input": {
+    "userId": "vip_123",
+    "items": [
+      {
+        "sku": "SKU-1",
+        "qty": 1
+      }
+    ],
+    "paymentToken": "fail_tok_123"
+  },
+  "logs": [
+    {
+      "tsOffsetMs": 0,
+      "level": "info",
+      "message": "checkout started",
+      "meta": {
+        "userId": "vip_123"
+      }
+    },
+    {
+      "tsOffsetMs": 0,
+      "level": "error",
+      "message": "payment rejected",
+      "meta": {
+        "payment": {
+          "approved": false,
+          "riskScore": 98
+        },
+        "user": {
+          "tier": "vip"
+        }
+      }
+    }
+  ],
+  "externalCalls": [
+    {
+      "kind": "http",
+      "name": "payments.authorize",
+      "request": {
+        "token": "fail_tok_123"
+      },
+      "response": {
+        "approved": false,
+        "riskScore": 98
+      }
+    },
+    {
+      "kind": "db",
+      "name": "users.lookup",
+      "request": {
+        "userId": "vip_123"
+      },
+      "response": {
+        "tier": "vip"
+      }
+    }
+  ],
+  "error": {
+    "name": "Error",
+    "message": "Payment rejected with high risk score",
+    "stack": "Error: Payment rejected with high risk score\n    at file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/examples/failing-production-sim.mjs:41:13\n    at async captureFailure (file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/packages/core/dist/capture.js:36:20)\n    at async Object.withCapture (file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/packages/core/dist/capture.js:68:21)\n    at async checkout (file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/examples/failing-production-sim.mjs:20:3)"
+  }
+}

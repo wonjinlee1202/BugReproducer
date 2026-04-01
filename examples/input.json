@@ -1,0 +1,10 @@
+{
+  "userId": "vip_123",
+  "items": [
+    {
+      "sku": "SKU-1",
+      "qty": 1
+    }
+  ],
+  "paymentToken": "fail_tok_123"
+}

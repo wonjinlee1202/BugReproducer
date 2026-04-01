@@ -1,0 +1,4 @@
+{
+  "name": "PaymentHighRiskError",
+  "message": "Payment rejected with high risk score"
+}
