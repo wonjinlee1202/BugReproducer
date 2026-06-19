@@ -44,10 +44,10 @@ export async function generateReproScript(
   // and when run via tsx (src/replay.ts → ../../dist/index.js = dist/index.js).
   const thisFile = fileURLToPath(import.meta.url);
   const projectRoot = path.resolve(path.dirname(thisFile), "..");
-  const coreImport = pathToFileURL(path.join(projectRoot, "dist", "index.js")).href;
+  const coreImport = pathToFileURL(path.join(projectRoot, "src", "index.ts")).href;
   const adapterImport = pathToFileURL(adapterPath).href;
 
-  const script = `#!/usr/bin/env node
+  const script = `#!/usr/bin/env -S npx tsx
 import { replayCapture } from ${JSON.stringify(coreImport)};
 import { adapter } from ${JSON.stringify(adapterImport)};
 
