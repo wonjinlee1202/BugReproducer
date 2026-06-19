@@ -186,17 +186,19 @@ npm run bugrepro -- generate \
 /home/wonjin/projects/BugReproducer/repros/payment-rejection.mjs
 ```
 
-Give the script a meaningful name with `--out` so multiple repros do not overwrite each other. You can then run it with plain Node — no CLI, no TypeScript, no build:
+Give the script a meaningful name with `--out` so multiple repros do not overwrite each other. Run it directly (the file is executable and has a tsx shebang) or via `npx tsx` — do not use plain `node`, as the script imports TypeScript source:
 
 ```bash
-node repros/payment-rejection.mjs
+./repros/payment-rejection.mjs
+# or
+npx tsx repros/payment-rejection.mjs
 ```
 
 ```
 Reproduced failure: Error: Payment rejected for user vip_123
 ```
 
-The capture path and adapter path are baked in as absolute file URLs. In CI, use `ci-attach` instead — it automatically names the script after the capture ID so there are never collisions:
+The capture path and adapter path are baked in as absolute file URLs — no arguments needed. In CI, use `ci-attach` instead — it automatically names the script after the capture ID so there are never collisions:
 
 ```bash
 npm run bugrepro -- ci-attach \
