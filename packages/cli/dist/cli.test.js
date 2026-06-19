@@ -1,6 +1,0 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-test("smoke", () => {
-    assert.equal(typeof process.version, "string");
-});
-//# sourceMappingURL=cli.test.js.map

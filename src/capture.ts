@@ -90,9 +90,7 @@ export function createRuntimeCapture(options: RuntimeCaptureOptions) {
         error: toFailureSummary(err),
       };
       const capturePath = await store.write(capture);
-      throw Object.assign(err as Error, {
-        capturePath,
-      });
+      throw Object.assign(err as Error, { capturePath });
     }
   }
 

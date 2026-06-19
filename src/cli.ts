@@ -18,7 +18,7 @@ import {
   type CaptureRecord,
   type JsonValue,
   type ReplayAdapter,
-} from "@bugrepro/core";
+} from "./index.js";
 
 const program = new Command();
 
@@ -27,25 +27,22 @@ program
   .description("Capture production failures and replay them deterministically.")
   .version("0.1.0");
 
+// ── capture ──────────────────────────────────────────────────────────────────
 program
   .command("capture")
-  .description("Capture an error from JSON files (for ingestion pipeline / CI).")
+  .description("Ingest an error + input payload into a capture file.")
   .requiredOption("--app <name>", "application/service name")
   .requiredOption("--operation <name>", "failing operation name")
   .requiredOption("--input <path>", "JSON file containing failing input")
   .requiredOption("--error <path>", "JSON file containing error payload")
-  .option("--context <path>", "JSON context metadata")
-  .option("--capture-dir <path>", "output directory", "captures")
+  .option("--context <path>", "optional JSON context metadata")
+  .option("--capture-dir <path>", "output directory for captures", "captures")
   .action(async (opts) => {
     const input = await readJsonFile(opts.input);
     const errorPayload = await readJsonFile(opts.error);
     const context = opts.context ? await readJsonFile(opts.context) : undefined;
 
-    const runtime = createRuntimeCapture({
-      app: opts.app,
-      captureDir: opts.captureDir,
-    });
-
+    const runtime = createRuntimeCapture({ app: opts.app, captureDir: opts.captureDir });
     const error = new Error(String((errorPayload as any).message ?? "Captured error"));
     error.name = String((errorPayload as any).name ?? "CapturedError");
     if (typeof (errorPayload as any).stack === "string") {
@@ -56,9 +53,10 @@ program
     console.log(output.capturePath);
   });
 
+// ── list ─────────────────────────────────────────────────────────────────────
 program
   .command("list")
-  .description("List saved capture files.")
+  .description("List all capture files.")
   .option("--capture-dir <path>", "capture directory", "captures")
   .action(async (opts) => {
     const store = createCaptureStore(opts.captureDir);
@@ -67,26 +65,23 @@ program
       console.log("(no captures)");
       return;
     }
-    for (const file of files) {
-      console.log(file);
-    }
+    for (const file of files) console.log(file);
   });
 
+// ── replay ───────────────────────────────────────────────────────────────────
 program
   .command("replay")
-  .description("Replay a capture with deterministic runtime + mocked dependencies.")
+  .description("Replay a capture deterministically with mocked dependencies.")
   .requiredOption("--capture <path>", "capture file path")
-  .requiredOption("--adapter <path>", "adapter module path, exporting `adapter`")
-  .option("--metrics-file <path>", "append replay metrics to NDJSON file")
-  .option("--baseline-minutes <number>", "historical debug time (for impact metrics)")
-  .option("--replay-minutes <number>", "actual debug time with bugrepro")
+  .requiredOption("--adapter <path>", "path to adapter module (exports `adapter`)")
+  .option("--metrics-file <path>", "append replay result to a metrics NDJSON file")
+  .option("--baseline-minutes <number>", "historical debug time before bugrepro (for metrics)")
+  .option("--replay-minutes <number>", "actual debug time with bugrepro (for metrics)")
   .action(async (opts) => {
     const adapter = await loadAdapter(opts.adapter);
     const capturePath = path.resolve(opts.capture);
-    const result = await replayCapture({
-      capturePath,
-      adapter,
-    });
+    const result = await replayCapture({ capturePath, adapter });
+
     if (opts.metricsFile) {
       const store = createCaptureStore(path.dirname(capturePath));
       const capture = await store.read(capturePath);
@@ -99,6 +94,7 @@ program
         replayDebugMinutes: numOrUndefined(opts.replayMinutes),
       });
     }
+
     if (result.ok) {
       console.log("Replay completed with no error.");
       return;
@@ -107,39 +103,44 @@ program
     process.exitCode = 1;
   });
 
+// ── generate ─────────────────────────────────────────────────────────────────
 program
   .command("generate")
-  .description("Generate standalone local repro script from a capture.")
+  .description("Generate a standalone one-command repro script from a capture.")
   .requiredOption("--capture <path>", "capture file path")
-  .requiredOption("--out <path>", "output script path")
-  .requiredOption("--adapter <module>", "module path as it should be imported in script")
+  .requiredOption("--adapter <path>", "path to your adapter module")
+  .option("--out <path>", "output script path", "repros/repro.mjs")
   .action(async (opts) => {
-    await generateReproScript(path.resolve(opts.capture), path.resolve(opts.out), opts.adapter);
-    console.log(path.resolve(opts.out));
+    const out = path.resolve(opts.out);
+    await generateReproScript(
+      path.resolve(opts.capture),
+      out,
+      path.resolve(opts.adapter),
+    );
+    console.log(out);
   });
 
+// ── ci-attach ────────────────────────────────────────────────────────────────
 program
   .command("ci-attach")
-  .description("Generate repro script in CI artifact directory for failed runs.")
+  .description("Generate a repro script in a CI artifact directory for failed runs.")
   .requiredOption("--capture <path>", "capture file path")
-  .requiredOption("--adapter <module>", "adapter module import path used in generated script")
-  .option("--artifacts <path>", "artifact output directory", "ci-artifacts")
+  .requiredOption("--adapter <path>", "path to your adapter module")
+  .option("--artifacts <path>", "artifact output directory", "repros")
   .action(async (opts) => {
     const capturePath = path.resolve(opts.capture);
     const base = path.basename(capturePath, ".json");
     const out = path.resolve(opts.artifacts, `${base}.repro.mjs`);
-    await generateReproScript(capturePath, out, opts.adapter);
+    await generateReproScript(capturePath, out, path.resolve(opts.adapter));
     console.log(out);
   });
 
+// ── minimize ─────────────────────────────────────────────────────────────────
 program
   .command("minimize")
-  .description("Find a smaller failing input while preserving failure behavior.")
+  .description("Shrink the failing input to the smallest version that still reproduces the failure.")
   .requiredOption("--capture <path>", "capture file path")
-  .requiredOption(
-    "--adapter <path>",
-    "adapter module path, exporting `stillFails(input, capture)` OR `adapter`"
-  )
+  .requiredOption("--adapter <path>", "path to adapter module (exports `stillFails` or `adapter`)")
   .option("--out <path>", "where to write minimized capture", "captures/minimized.json")
   .action(async (opts) => {
     const capturePath = path.resolve(opts.capture);
@@ -147,7 +148,7 @@ program
     const capture = await store.read(capturePath);
 
     const mod = await import(pathToFileURL(path.resolve(opts.adapter)).href);
-    const stillFails = await buildStillFails(mod, capture);
+    const stillFails = buildStillFails(mod, capture);
 
     const minimizedInput = await minimizeInput(capture.input, (candidate) => stillFails(candidate));
     const minimizedCapture: CaptureRecord = {
@@ -162,11 +163,12 @@ program
     console.log(outPath);
   });
 
+// ── metrics ───────────────────────────────────────────────────────────────────
 program
   .command("metrics")
-  .description("Summarize and render bug reproduction impact metrics.")
-  .requiredOption("--in <path>", "metrics NDJSON input")
-  .option("--out <path>", "dashboard HTML output", "reports/impact-dashboard.html")
+  .description("Summarize replay metrics and write an HTML impact dashboard.")
+  .requiredOption("--in <path>", "metrics NDJSON input file")
+  .option("--out <path>", "dashboard HTML output path", "reports/impact-dashboard.html")
   .action(async (opts) => {
     const rows = await readMetrics(path.resolve(opts.in));
     const summary = summarizeMetrics(rows);
@@ -175,12 +177,13 @@ program
     console.log(`dashboard: ${path.resolve(opts.out)}`);
   });
 
+// ── dashboard ────────────────────────────────────────────────────────────────
 program
   .command("dashboard")
-  .description("Serve impact metrics dashboard locally.")
-  .requiredOption("--in <path>", "metrics NDJSON input")
-  .option("--host <host>", "host", "127.0.0.1")
-  .option("--port <number>", "port", "4173")
+  .description("Serve a live metrics dashboard in your browser.")
+  .requiredOption("--in <path>", "metrics NDJSON input file")
+  .option("--host <host>", "host to listen on", "127.0.0.1")
+  .option("--port <number>", "port to listen on", "4173")
   .action(async (opts) => {
     const inputFile = path.resolve(opts.in);
     const host = String(opts.host);
@@ -207,9 +210,8 @@ program
       server.listen(port, host, () => resolve());
     });
 
-    const url = `http://${host}:${port}`;
-    console.log(`dashboard server: ${url}`);
-    console.log(`source: ${inputFile}`);
+    console.log(`dashboard: http://${host}:${port}`);
+    console.log(`source:    ${inputFile}`);
   });
 
 program.parseAsync(process.argv).catch((err) => {
@@ -217,6 +219,8 @@ program.parseAsync(process.argv).catch((err) => {
   console.error(e.stack ?? e.message);
   process.exit(1);
 });
+
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 async function readJsonFile(filePath: string): Promise<JsonValue> {
   const raw = await fs.readFile(path.resolve(filePath), "utf8");
@@ -226,7 +230,7 @@ async function readJsonFile(filePath: string): Promise<JsonValue> {
 async function loadAdapter(filePath: string): Promise<ReplayAdapter> {
   const mod = await import(pathToFileURL(path.resolve(filePath)).href);
   if (!mod.adapter || typeof mod.adapter.run !== "function") {
-    throw new Error(`Adapter module must export { adapter: { run(input, capture) } }`);
+    throw new Error("Adapter module must export { adapter: { run(input, capture) } }");
   }
   return mod.adapter as ReplayAdapter;
 }
@@ -237,14 +241,13 @@ function numOrUndefined(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-async function buildStillFails(
+function buildStillFails(
   mod: Record<string, unknown>,
   capture: CaptureRecord
-): Promise<(input: JsonValue) => Promise<boolean>> {
+): (input: JsonValue) => Promise<boolean> {
   if (typeof mod.stillFails === "function") {
-    return async (input) => {
-      return Boolean(await (mod.stillFails as (x: JsonValue, c: CaptureRecord) => Promise<boolean>)(input, capture));
-    };
+    return async (input) =>
+      Boolean(await (mod.stillFails as (x: JsonValue, c: CaptureRecord) => Promise<boolean>)(input, capture));
   }
   if (mod.adapter && typeof (mod.adapter as ReplayAdapter).run === "function") {
     return async (input) => {

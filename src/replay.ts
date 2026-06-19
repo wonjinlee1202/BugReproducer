@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { installDeterministicRuntime } from "./deterministic.js";
 import { createCaptureStore } from "./store.js";
 import type { CaptureRecord, ReplayResult } from "./types.js";
@@ -22,19 +23,12 @@ export async function replayCapture(options: ReplayOptions): Promise<ReplayResul
 
   try {
     await options.adapter.run(capture.input, capture);
-    return {
-      ok: true,
-      elapsedMs: Date.now() - start,
-    };
+    return { ok: true, elapsedMs: Date.now() - start };
   } catch (err) {
     const error = err instanceof Error
       ? { name: err.name, message: err.message, stack: err.stack }
       : { name: "UnknownError", message: String(err) };
-    return {
-      ok: false,
-      elapsedMs: Date.now() - start,
-      error,
-    };
+    return { ok: false, elapsedMs: Date.now() - start, error };
   } finally {
     restore();
   }
@@ -43,26 +37,31 @@ export async function replayCapture(options: ReplayOptions): Promise<ReplayResul
 export async function generateReproScript(
   capturePath: string,
   outputPath: string,
-  adapterModulePath: string
+  adapterPath: string,
 ): Promise<void> {
-  const script = `#!/usr/bin/env node
-import { replayCapture } from "@bugrepro/core";
-import { adapter } from "${adapterModulePath}";
+  // Resolve the dist/index.js path relative to this source file's project root.
+  // Works both when compiled (dist/replay.js → ../../dist/index.js = dist/index.js)
+  // and when run via tsx (src/replay.ts → ../../dist/index.js = dist/index.js).
+  const thisFile = fileURLToPath(import.meta.url);
+  const projectRoot = path.resolve(path.dirname(thisFile), "..");
+  const coreImport = pathToFileURL(path.join(projectRoot, "dist", "index.js")).href;
+  const adapterImport = pathToFileURL(adapterPath).href;
 
-const capturePath = ${JSON.stringify(capturePath)};
+  const script = `#!/usr/bin/env node
+import { replayCapture } from ${JSON.stringify(coreImport)};
+import { adapter } from ${JSON.stringify(adapterImport)};
 
 const result = await replayCapture({
-  capturePath,
+  capturePath: ${JSON.stringify(capturePath)},
   adapter,
 });
 
 if (result.ok) {
-  console.log("Replay completed with no error.");
+  console.log("Replay: no error reproduced.");
   process.exit(0);
 }
 
-console.error("Replay reproduced failure:");
-console.error(result.error?.name + ": " + result.error?.message);
+console.error("Reproduced failure: " + result.error?.name + ": " + result.error?.message);
 console.error(result.error?.stack ?? "(no stack)");
 process.exit(1);
 `;
