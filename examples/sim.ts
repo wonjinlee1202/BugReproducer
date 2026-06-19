@@ -1,29 +1,21 @@
-import { createRuntimeCapture, type JsonValue } from "@bugrepro/core";
-
-interface CheckoutInput {
-  userId: string;
-  items: Array<{ sku: string; qty: number }>;
-  paymentToken: string;
-}
+import { createRuntimeCapture } from "../src/index.js";
 
 const runtime = createRuntimeCapture({
   app: "checkout-service",
   captureDir: "captures",
 });
 
-async function fakePaymentApi(token: string): Promise<{ approved: boolean; riskScore: number }> {
-  if (token.startsWith("fail_")) {
-    return { approved: false, riskScore: 98 };
-  }
+async function fakePaymentApi(token: string) {
+  if (token.startsWith("fail_")) return { approved: false, riskScore: 98 };
   return { approved: true, riskScore: 20 };
 }
 
-async function fakeDbLookup(userId: string): Promise<{ tier: "standard" | "vip" }> {
+async function fakeDbLookup(userId: string) {
   return userId.startsWith("vip") ? { tier: "vip" } : { tier: "standard" };
 }
 
-async function checkout(input: CheckoutInput): Promise<void> {
-  await runtime.withCapture("checkout", input as unknown as JsonValue, async (ctx) => {
+async function checkout(input: { userId: string; items: { sku: string; qty: number }[]; paymentToken: string }) {
+  await runtime.withCapture("checkout", input, async (ctx) => {
     ctx.log("info", "checkout started", { userId: input.userId });
 
     const payment = await fakePaymentApi(input.paymentToken);
@@ -46,8 +38,6 @@ async function checkout(input: CheckoutInput): Promise<void> {
       ctx.log("error", "payment rejected", { payment, user });
       throw new Error("Payment rejected with high risk score");
     }
-
-    ctx.log("info", "checkout completed");
   });
 }
 
@@ -56,13 +46,8 @@ checkout({
   items: [{ sku: "SKU-1", qty: 1 }],
   paymentToken: "fail_tok_123",
 })
-  .then(() => {
-    console.log("unexpected success");
-  })
-  .catch((err) => {
-    const capturePath = (err as Error & { capturePath?: string }).capturePath;
+  .then(() => console.log("unexpected success"))
+  .catch((err: Error & { capturePath?: string }) => {
     console.error("Simulated production failure captured.");
-    if (capturePath) {
-      console.error("capture:", capturePath);
-    }
+    if (err.capturePath) console.error("capture:", err.capturePath);
   });

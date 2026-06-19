@@ -46,17 +46,13 @@ export function summarizeMetrics(metrics: ReproMetrics[]): MetricsSummary {
     .map((m) => m.replayDebugMinutes)
     .filter((v): v is number => typeof v === "number");
 
-  const averageDebugMinutesBefore = mean(before);
-  const averageDebugMinutesAfter = mean(after);
-  const averageMinutesSaved = averageDebugMinutesBefore - averageDebugMinutesAfter;
-
   return {
     totalBugs,
     autoReproduced,
     replaySuccessRate,
-    averageDebugMinutesBefore,
-    averageDebugMinutesAfter,
-    averageMinutesSaved,
+    averageDebugMinutesBefore: mean(before),
+    averageDebugMinutesAfter: mean(after),
+    averageMinutesSaved: mean(before) - mean(after),
   };
 }
 
@@ -153,15 +149,13 @@ export function renderMetricsDashboardHtml(summary: MetricsSummary, rows: ReproM
       </tr>
     </thead>
     <tbody>
-      ${rows.map((row) => {
-        return `<tr>
+      ${rows.map((row) => `<tr>
           <td>${row.bugId}</td>
           <td>${row.capturedAt}</td>
           <td class="${row.replaySuccess ? "ok" : ""}">${row.replaySuccess ? "yes" : "no"}</td>
           <td>${row.baselineDebugMinutes ?? "-"}</td>
           <td>${row.replayDebugMinutes ?? "-"}</td>
-        </tr>`;
-      }).join("\n")}
+        </tr>`).join("\n")}
     </tbody>
   </table>
 </body>
