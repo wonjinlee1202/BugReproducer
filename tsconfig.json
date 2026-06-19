@@ -10,6 +10,9 @@
     "declaration": true,
     "sourceMap": true,
     "resolveJsonModule": true,
-    "types": ["node"]
-  }
+    "types": ["node"],
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"]
 }

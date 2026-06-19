@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "captureId": "cap_1775001745965_342d9dfc",
+  "captureId": "cap_1781892208778_33dbafae",
   "app": "checkout-service",
   "operation": "checkout",
-  "capturedAt": "2026-04-01T00:02:25.966Z",
+  "capturedAt": "2026-06-19T18:03:28.778Z",
   "deterministic": {
-    "seed": 2211564915,
-    "epochMs": 1775001745965,
+    "seed": 3815419686,
+    "epochMs": 1781892208777,
     "tickMs": 3,
     "timezone": "UTC"
   },
@@ -21,7 +21,7 @@
       }
     },
     {
-      "tsOffsetMs": 0,
+      "tsOffsetMs": 1,
       "level": "error",
       "message": "payment rejected",
       "meta": {
@@ -61,7 +61,7 @@
   "error": {
     "name": "Error",
     "message": "Payment rejected with high risk score",
-    "stack": "Error: Payment rejected with high risk score\n    at file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/examples/failing-production-sim.mjs:41:13\n    at async captureFailure (file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/packages/core/dist/capture.js:36:20)\n    at async Object.withCapture (file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/packages/core/dist/capture.js:68:21)\n    at async checkout (file:///Users/wonjinlee/Desktop/BugReproducer/bugreproducer/examples/failing-production-sim.mjs:20:3)"
+    "stack": "Error: Payment rejected with high risk score\n    at <anonymous> (/home/wonjin/projects/BugReproducer/examples/sim.ts:39:13)\n    at captureFailure (/home/wonjin/projects/BugReproducer/src/capture.ts:70:14)\n    at Object.withCapture (/home/wonjin/projects/BugReproducer/src/capture.ts:105:15)\n    at checkout (/home/wonjin/projects/BugReproducer/examples/sim.ts:18:3)"
   },
   "tags": [
     "minimized"

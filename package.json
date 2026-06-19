@@ -1,28 +1,26 @@
 {
-  "name": "bugreproducer",
-  "private": true,
+  "name": "bugrepro",
   "version": "0.1.0",
-  "description": "Runtime bug reproducer CLI: capture, replay, and generate deterministic minimal repro scripts.",
-  "workspaces": [
-    "packages/*"
-  ],
+  "description": "Capture production failures and replay them deterministically.",
+  "type": "module",
   "scripts": {
-    "build": "npm run -w @bugrepro/core build && npm run -w @bugrepro/cli build",
-    "dev": "npm run -w @bugrepro/cli dev",
-    "lint": "npm run -w @bugrepro/core lint && npm run -w @bugrepro/cli lint",
-    "test": "npm run -w @bugrepro/core test && npm run -w @bugrepro/cli test",
-    "check": "npm run build && npm run test"
+    "sim": "tsx examples/sim.ts",
+    "bugrepro": "tsx src/cli.ts",
+    "build": "tsc",
+    "test": "tsx --test src/minimize.test.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
-  "keywords": [
-    "bug",
-    "reproducer",
-    "runtime",
-    "debugging",
-    "deterministic",
-    "cli"
-  ],
+  "dependencies": {
+    "commander": "^13.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  },
+  "keywords": ["bug", "reproducer", "runtime", "debugging", "deterministic", "cli"],
   "license": "MIT"
 }
