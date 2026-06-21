@@ -56,13 +56,26 @@ reports/          metrics NDJSON + HTML dashboard output
 
 ---
 
-## Setup
+## Installation
+
+```bash
+npm install @wonjinlee1202/bugreproducer
+```
+
+Or install the CLI globally:
+
+```bash
+npm install -g @wonjinlee1202/bugreproducer
+bugrepro --help
+```
+
+**To run from source** (clone the repo):
 
 ```bash
 npm install
 ```
 
-No build step required. All commands run TypeScript directly via `tsx`.
+No build step required for source — all commands run TypeScript directly via `tsx`.
 
 ---
 
@@ -237,6 +250,113 @@ Or serve a live dashboard that re-reads the file on every request:
 npm run bugrepro -- dashboard --in reports/metrics.ndjson
 # → http://127.0.0.1:4173
 ```
+
+---
+
+## Real-World Example: Express + Database API
+
+The example above uses a fake checkout service to keep the walkthrough self-contained. Here is a more realistic scenario: a production Express order API that throws `TypeError: Cannot read properties of null (reading 'discountPct')` for roughly 2% of requests.
+
+**Why it's hard to reproduce:** The bug only triggers when a user submits an expired coupon code. In development the database still has all coupons active, so every test passes. In production some coupons have expired, the query returns `null`, and the route crashes.
+
+### The bug
+
+```ts
+// src/routes/orders.ts
+app.post("/orders", async (req, res) => {
+  const { userId, items, couponCode } = req.body;
+
+  const coupon = await db.getCoupon(couponCode); // returns null for expired codes
+  const discount = coupon.discountPct / 100;      // TypeError: Cannot read properties of null
+  const total = calcSubtotal(items) * (1 - discount);
+
+  res.json({ orderId: `ord_${Date.now()}`, total });
+});
+```
+
+### 1. Wrap the route with withCapture()
+
+```ts
+import { createRuntimeCapture } from "@wonjinlee1202/bugreproducer";
+
+const runtime = createRuntimeCapture({ app: "order-api", captureDir: "captures" });
+
+app.post("/orders", async (req, res) => {
+  const input = req.body;
+  try {
+    await runtime.withCapture("POST /orders", input, async (ctx) => {
+      ctx.log("info", "order received", { userId: input.userId });
+
+      const coupon = await db.getCoupon(input.couponCode);
+      ctx.recordExternalCall({
+        kind: "db", name: "coupons.get",
+        request: { code: input.couponCode }, response: coupon,
+      });
+
+      const discount = coupon.discountPct / 100; // still crashes — and now gets captured
+      const total = calcSubtotal(input.items) * (1 - discount);
+      res.json({ orderId: `ord_${Date.now()}`, total });
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+```
+
+The next time a request with an expired coupon hits production, `withCapture()` catches the crash and writes a `captures/cap_<id>.json` with the exact input, the null DB response, and the error — everything needed to replay it offline.
+
+### 2. The capture file (written by production)
+
+```json
+{
+  "captureId": "cap_1782041923400_a3f1b2c4",
+  "app": "order-api",
+  "operation": "POST /orders",
+  "input": { "userId": "u_42", "items": [{ "sku": "MUG-L", "qty": 2 }], "couponCode": "SUMMER20" },
+  "externalCalls": [
+    { "kind": "db", "name": "coupons.get",
+      "request":  { "code": "SUMMER20" },
+      "response": null }
+  ],
+  "error": { "name": "TypeError", "message": "Cannot read properties of null (reading 'discountPct')" },
+  "deterministic": { "seed": 2947183056, "epochMs": 1782041923399, "tickMs": 1 }
+}
+```
+
+### 3. Replay locally — no database needed
+
+```bash
+npx bugrepro replay \
+  --capture captures/cap_1782041923400_a3f1b2c4.json \
+  --adapter examples/express-api/adapter.ts
+```
+
+```
+Reproduced failure: TypeError: Cannot read properties of null (reading 'discountPct')
+```
+
+The adapter re-runs the route logic but reads the DB response (the `null` coupon) directly from the capture file. No database connection required.
+
+### 4. Minimize to the root cause
+
+```bash
+npx bugrepro minimize \
+  --capture captures/cap_1782041923400_a3f1b2c4.json \
+  --adapter examples/express-api/adapter.ts \
+  --out captures/minimized.json
+```
+
+```json
+{ "couponCode": "SUMMER20" }
+```
+
+`userId` and `items` turn out not to matter — the crash is entirely in the coupon lookup. The fix:
+
+```ts
+const discount = coupon ? coupon.discountPct / 100 : 0;
+```
+
+> The full runnable version of this example lives in [`examples/express-api/`](examples/express-api/).
 
 ---
 

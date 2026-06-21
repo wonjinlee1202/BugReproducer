@@ -1,23 +1,49 @@
 {
-  "name": "bugrepro",
+  "name": "@wonjinlee1202/bugreproducer",
   "version": "0.1.0",
   "description": "Capture production failures and replay them deterministically.",
   "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "bugrepro": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "sim": "tsx examples/sim.ts",
     "bugrepro": "tsx src/cli.ts",
     "build": "tsc",
-    "test": "tsx --test src/minimize.test.ts"
+    "test": "tsx --test src/minimize.test.ts",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=18"
+  },
+  "author": "Wonjin Lee <wonjinlee1202@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wonjinlee1202/BugReproducer.git"
+  },
+  "homepage": "https://github.com/wonjinlee1202/BugReproducer#readme",
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "commander": "^13.1.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "express": "^4.21.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
   },
