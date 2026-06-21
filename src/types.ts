@@ -61,6 +61,8 @@ export interface ReplayResult {
 export interface ReproMetrics {
   bugId: string;
   capturedAt: string;
+  operation?: string;
+  errorMessage?: string;
   replayedAt?: string;
   replaySuccess?: boolean;
   baselineDebugMinutes?: number;

@@ -14,6 +14,7 @@ import {
   replayCapture,
   renderMetricsDashboardHtml,
   summarizeMetrics,
+  upsertMetric,
   writeMetricsDashboard,
   type CaptureRecord,
   type JsonValue,
@@ -74,9 +75,7 @@ program
   .description("Replay a capture deterministically with mocked dependencies.")
   .requiredOption("--capture <path>", "capture file path")
   .requiredOption("--adapter <path>", "path to adapter module (exports `adapter`)")
-  .option("--metrics-file <path>", "append replay result to a metrics NDJSON file")
-  .option("--baseline-minutes <number>", "historical debug time before bugrepro (for metrics)")
-  .option("--replay-minutes <number>", "actual debug time with bugrepro (for metrics)")
+  .option("--metrics-file <path>", "record replay result to a metrics NDJSON file")
   .action(async (opts) => {
     const adapter = await loadAdapter(opts.adapter);
     const capturePath = path.resolve(opts.capture);
@@ -85,13 +84,13 @@ program
     if (opts.metricsFile) {
       const store = createCaptureStore(path.dirname(capturePath));
       const capture = await store.read(capturePath);
-      await appendMetric(path.resolve(opts.metricsFile), {
+      await upsertMetric(path.resolve(opts.metricsFile), {
         bugId: capture.captureId,
         capturedAt: capture.capturedAt,
+        operation: capture.operation,
+        errorMessage: capture.error.message,
         replayedAt: new Date().toISOString(),
         replaySuccess: !result.ok,
-        baselineDebugMinutes: numOrUndefined(opts.baselineMinutes),
-        replayDebugMinutes: numOrUndefined(opts.replayMinutes),
       });
     }
 
@@ -133,6 +132,34 @@ program
     const out = path.resolve(opts.artifacts, `${base}.repro.mjs`);
     await generateReproScript(capturePath, out, path.resolve(opts.adapter));
     console.log(out);
+  });
+
+// ── record ───────────────────────────────────────────────────────────────────
+program
+  .command("record")
+  .description("Add or update debug timing data for a capture in the metrics file.")
+  .requiredOption("--capture <path>", "capture file path")
+  .requiredOption("--metrics-file <path>", "metrics NDJSON file to update")
+  .option("--baseline-minutes <number>", "how long this bug took to debug without BugReproducer")
+  .option("--replay-minutes <number>", "how long it took to debug with BugReproducer")
+  .option("--replay-success <bool>", "whether replay reproduced the failure (true/false)")
+  .action(async (opts) => {
+    const capturePath = path.resolve(opts.capture);
+    const store = createCaptureStore(path.dirname(capturePath));
+    const capture = await store.read(capturePath);
+
+    const update: Record<string, unknown> = {
+      bugId: capture.captureId,
+      capturedAt: capture.capturedAt,
+      operation: capture.operation,
+      errorMessage: capture.error.message,
+    };
+    if (opts.baselineMinutes !== undefined) update.baselineDebugMinutes = numOrUndefined(opts.baselineMinutes);
+    if (opts.replayMinutes !== undefined) update.replayDebugMinutes = numOrUndefined(opts.replayMinutes);
+    if (opts.replaySuccess !== undefined) update.replaySuccess = opts.replaySuccess === "true";
+
+    await upsertMetric(path.resolve(opts.metricsFile), update as Parameters<typeof upsertMetric>[1]);
+    console.log(`Recorded metrics for ${capture.captureId}`);
   });
 
 // ── minimize ─────────────────────────────────────────────────────────────────
