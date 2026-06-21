@@ -56,26 +56,13 @@ reports/          metrics NDJSON + HTML dashboard output
 
 ---
 
-## Installation
-
-```bash
-npm install @wonjinlee1202/bugreproducer
-```
-
-Or install the CLI globally:
-
-```bash
-npm install -g @wonjinlee1202/bugreproducer
-bugrepro --help
-```
-
-**To run from source** (clone the repo):
+## Setup
 
 ```bash
 npm install
 ```
 
-No build step required for source — all commands run TypeScript directly via `tsx`.
+No build step required. All commands run TypeScript directly via `tsx`.
 
 ---
 
@@ -277,7 +264,7 @@ app.post("/orders", async (req, res) => {
 ### 1. Wrap the route with withCapture()
 
 ```ts
-import { createRuntimeCapture } from "@wonjinlee1202/bugreproducer";
+import { createRuntimeCapture } from "../../src/index.js";
 
 const runtime = createRuntimeCapture({ app: "order-api", captureDir: "captures" });
 
