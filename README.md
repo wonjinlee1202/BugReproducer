@@ -1,8 +1,8 @@
 # BugReproducer
 
-A CLI tool for capturing production failures and replaying them deterministically.
+Capture production failures and replay them deterministically.
 
-When your service throws in production, BugReproducer snapshots everything — the input, all logs, every HTTP and DB call and its response, and the clock value at the time of the crash — into a single JSON file. You can then replay that exact crash on any machine, shrink the input down to the smallest version that still breaks, and generate a one-command repro script to share with teammates or attach to a CI artifact.
+When your service throws in production, BugReproducer snapshots everything needed to reproduce the crash — the input, all log lines, every HTTP and DB call with its response, and the runtime clock and RNG state — into a single portable JSON file. You can then replay that exact crash on any machine, shrink the input to the smallest version that still fails, and generate a one-command repro script to share with teammates or attach to a CI artifact.
 
 ---
 
@@ -14,44 +14,50 @@ Production crash
       ▼
 withCapture() catches the exception
       │
-      ├── serializes: input, logs, HTTP/DB responses, error, deterministic seed
+      ├── serializes: input · logs · HTTP/DB responses · error · clock seed
       │
       ▼
-captures/cap_<id>.json                ← everything needed to reproduce the bug
+captures/cap_<id>.json          ← self-contained crash snapshot
       │
-      ├── replay     → re-run with mocked deps, same clock/RNG
-      ├── minimize   → strip input down to smallest failing version
+      ├── replay     → re-run with mocked deps and same clock/RNG
+      ├── minimize   → shrink input to the smallest failing version
       ├── generate   → write a standalone one-command repro script
-      └── metrics    → track debug time before vs. after
+      └── metrics    → track and compare debug time before vs. after
 ```
 
-No real services are hit during replay. Every external call (HTTP, DB) is answered from the captured responses in the JSON file.
+No real services are contacted during replay. Every external call (HTTP, DB) is answered from the captured responses stored in the JSON file.
 
 ---
 
 ## Project Layout
 
 ```
-src/              source — engine and CLI in one flat package
-  capture.ts      withCapture() wrapper and captureFromError() API
-  replay.ts       deterministic replay and repro script generation
-  minimize.ts     delta-debug style input minimizer
+src/
+  types.ts          shared TypeScript interfaces and data shapes
+  schema.ts         Zod schemas that validate capture files on read
+  utils.ts          ID generation, seed hashing, filename sanitization
+  capture.ts        withCapture() wrapper and captureFromError() API
   deterministic.ts  patches Math.random / Date.now for identical replay
-  mocks.ts        makeHttpMock() / makeDbMock() helpers for adapters
-  metrics.ts      NDJSON metrics store and HTML dashboard renderer
-  store.ts        capture file I/O (read / write / list)
-  schema.ts       Zod validation for capture files
-  types.ts        shared TypeScript types
-  cli.ts          CLI entry point (all commands)
-  index.ts        public API exports
+  replay.ts         replayCapture() and generateReproScript()
+  minimize.ts       greedy input minimizer (delta-debug style)
+  mocks.ts          makeHttpMock() / makeDbMock() adapter helpers
+  store.ts          capture file I/O (read / write / list)
+  snapshot.ts       side-car DB snapshot files (large state, separate file)
+  metrics.ts        NDJSON metrics store and HTML dashboard renderer
+  index.ts          public API exports
+  cli.ts            all CLI commands (Commander.js)
+  minimize.test.ts  unit tests for the minimizer
 
 examples/
-  sim.ts          fake checkout service that intentionally crashes
-  adapter.ts      replay adapter for the example service
+  sim.ts            fake checkout service that crashes intentionally
+  adapter.ts        replay adapter for the sim example
+  express-api/
+    server.ts       Express order API demonstrating real-world integration
+    adapter.ts      replay adapter for the Express example
 
-captures/         JSON capture files (one per crash)
-repros/           generated standalone repro scripts
-reports/          metrics NDJSON + HTML dashboard output
+captures/           JSON capture files (one per crash)
+repros/             generated standalone repro scripts
+reports/            metrics NDJSON and HTML dashboard output
 ```
 
 ---
@@ -62,13 +68,13 @@ reports/          metrics NDJSON + HTML dashboard output
 npm install
 ```
 
-No build step required. All commands run TypeScript directly via `tsx`.
+No build step required for development. All commands run TypeScript directly via `tsx`.
 
 ---
 
 ## Walkthrough
 
-The included example is a fake e-commerce checkout service. It crashes intentionally on a bad payment token so you can try every command with a real capture file.
+The included example uses a fake e-commerce checkout service that crashes intentionally on a bad payment token, giving you a real capture file to try every command against.
 
 ### 1. Simulate a production failure
 
@@ -81,7 +87,7 @@ Simulated production failure captured.
 capture: captures/cap_1781892208778_33dbafae.json
 ```
 
-`npm run sim` runs [`examples/sim.ts`](examples/sim.ts), which calls a fake `checkout()` operation with a payment token that starts with `fail_`. The fake payment API returns `{ approved: false, riskScore: 98 }`, the checkout logic throws, and `withCapture()` catches the crash and writes everything to `captures/`.
+`npm run sim` runs [`examples/sim.ts`](examples/sim.ts), which calls a fake `checkout()` operation with a payment token that starts with `fail_`. The fake payment API returns `{ approved: false, riskScore: 98 }`, the checkout logic throws, and `withCapture()` catches the crash and writes the snapshot to `captures/`.
 
 The resulting capture file looks like this:
 
@@ -97,13 +103,14 @@ The resulting capture file looks like this:
   },
   "logs": [
     { "level": "info",  "message": "checkout started" },
-    { "level": "error", "message": "payment rejected", "meta": { "payment": { "approved": false, "riskScore": 98 }, "user": { "tier": "vip" } } }
+    { "level": "error", "message": "payment rejected",
+      "meta": { "payment": { "approved": false, "riskScore": 98 }, "user": { "tier": "vip" } } }
   ],
   "externalCalls": [
     { "kind": "http", "name": "payments.authorize",
       "request":  { "token": "fail_tok_123" },
       "response": { "approved": false, "riskScore": 98 } },
-    { "kind": "db", "name": "users.lookup",
+    { "kind": "db",   "name": "users.lookup",
       "request":  { "userId": "vip_123" },
       "response": { "tier": "vip" } }
   ],
@@ -112,7 +119,7 @@ The resulting capture file looks like this:
 }
 ```
 
-This file is the complete state of the crash. You can hand it to anyone and they can reproduce the exact failure without access to the payment API or the database.
+This file is the complete state of the crash. Anyone can replay it without access to the payment API or the database.
 
 ---
 
@@ -142,9 +149,9 @@ npm run bugrepro -- replay \
 Reproduced failure: Error: Payment rejected for user vip_123
 ```
 
-The CLI loads the capture, patches `Math.random` and `Date.now` to use the stored seed and clock, then runs your adapter with the captured input. The adapter re-runs the checkout logic but reads the HTTP and DB responses directly from the capture file instead of hitting real services. The same crash happens.
+The CLI loads the capture, patches `Math.random` and `Date.now` to use the stored seed and clock, then runs the adapter with the captured input. The adapter re-runs the checkout logic but reads all HTTP and DB responses directly from the capture file. The crash reproduces exactly.
 
-Exit code 1 when the failure is reproduced, 0 when it is not (useful in CI).
+Exit code 1 when the failure is reproduced, 0 when it is not — suitable for CI health checks.
 
 ---
 
@@ -158,10 +165,10 @@ npm run bugrepro -- minimize \
 ```
 
 ```
-/home/wonjin/projects/BugReproducer/captures/minimized.json
+captures/minimized.json
 ```
 
-The minimizer iteratively removes keys from the input — one at a time — and replays after each removal. If the crash still happens, the key is dropped permanently. If removing a key makes the crash go away, it is kept.
+The minimizer iteratively removes keys from the input and replays after each removal. If the crash still happens, the key is dropped permanently. If removing a key stops the crash, the key is kept.
 
 The original input had three fields. After minimization:
 
@@ -169,7 +176,7 @@ The original input had three fields. After minimization:
 { "paymentToken": "fail_tok_123" }
 ```
 
-`userId` and `items` turned out to be irrelevant — the crash is entirely in the payment token handling.
+`userId` and `items` turned out to be irrelevant — the crash is entirely in the payment token check.
 
 ---
 
@@ -183,14 +190,12 @@ npm run bugrepro -- generate \
 ```
 
 ```
-/home/wonjin/projects/BugReproducer/repros/payment-rejection.mjs
+repros/payment-rejection.mjs
 ```
 
-Give the script a meaningful name with `--out` so multiple repros do not overwrite each other. Run it directly (the file is executable and has a tsx shebang) or via `npx tsx` — do not use plain `node`, as the script imports TypeScript source:
+The generated script has a tsx shebang and bakes in the capture and adapter paths as absolute file URLs — no arguments needed to run it:
 
 ```bash
-./repros/payment-rejection.mjs
-# or
 npx tsx repros/payment-rejection.mjs
 ```
 
@@ -198,7 +203,7 @@ npx tsx repros/payment-rejection.mjs
 Reproduced failure: Error: Payment rejected for user vip_123
 ```
 
-The capture path and adapter path are baked in as absolute file URLs — no arguments needed. In CI, use `ci-attach` instead — it automatically names the script after the capture ID so there are never collisions:
+In CI, use `ci-attach` instead — it auto-names the script after the capture ID so multiple captures never overwrite each other:
 
 ```bash
 npm run bugrepro -- ci-attach \
@@ -212,18 +217,26 @@ npm run bugrepro -- ci-attach \
 
 ### 6. Track metrics and view the dashboard
 
-Record timing data alongside a replay:
+After a replay, pass `--metrics-file` to record the result:
 
 ```bash
 npm run bugrepro -- replay \
   --capture captures/cap_1781892208778_33dbafae.json \
   --adapter examples/adapter.ts \
+  --metrics-file reports/metrics.ndjson
+```
+
+Then annotate with timing data using the `record` command:
+
+```bash
+npm run bugrepro -- record \
+  --capture captures/cap_1781892208778_33dbafae.json \
   --metrics-file reports/metrics.ndjson \
   --baseline-minutes 90 \
   --replay-minutes 12
 ```
 
-`--baseline-minutes` is how long this bug would have taken to track down without BugReproducer. `--replay-minutes` is how long it actually took. Each replay appends one line to the NDJSON file.
+`--baseline-minutes` is how long this bug would have taken to track down without BugReproducer. `--replay-minutes` is how long it actually took. Each bug gets one row in the NDJSON file, upserted by capture ID.
 
 Generate a static HTML report:
 
@@ -240,18 +253,17 @@ npm run bugrepro -- dashboard --in reports/metrics.ndjson
 
 ---
 
-## Real-World Example: Express + Database API
+## Real-World Integration: Express API
 
-The example above uses a fake checkout service to keep the walkthrough self-contained. Here is a more realistic scenario: a production Express order API that throws `TypeError: Cannot read properties of null (reading 'discountPct')` for roughly 2% of requests.
+The sim example uses a fake service written specifically to demonstrate the tool. The following shows BugReproducer integrated into a real Express order API to capture a bug that was only reproducible in production.
 
-**Why it's hard to reproduce:** The bug only triggers when a user submits an expired coupon code. In development the database still has all coupons active, so every test passes. In production some coupons have expired, the query returns `null`, and the route crashes.
+**The scenario:** an order endpoint crashes with `TypeError: Cannot read properties of null (reading 'discountPct')` for roughly 2% of requests. In development every coupon in the database is active, so the bug never surfaces. In production some coupons have expired, the query returns `null`, and the route crashes.
 
 ### The bug
 
 ```ts
-// src/routes/orders.ts
 app.post("/orders", async (req, res) => {
-  const { userId, items, couponCode } = req.body;
+  const { couponCode, items } = req.body;
 
   const coupon = await db.getCoupon(couponCode); // returns null for expired codes
   const discount = coupon.discountPct / 100;      // TypeError: Cannot read properties of null
@@ -290,9 +302,9 @@ app.post("/orders", async (req, res) => {
 });
 ```
 
-The next time a request with an expired coupon hits production, `withCapture()` catches the crash and writes a `captures/cap_<id>.json` with the exact input, the null DB response, and the error — everything needed to replay it offline.
+The next time a request with an expired coupon reaches production, `withCapture()` catches the crash and writes a capture file with the exact input and the `null` DB response.
 
-### 2. The capture file (written by production)
+### 2. The capture file (written in production)
 
 ```json
 {
@@ -310,10 +322,10 @@ The next time a request with an expired coupon hits production, `withCapture()` 
 }
 ```
 
-### 3. Replay locally — no database needed
+### 3. Replay locally — no database required
 
 ```bash
-npx bugrepro replay \
+npm run bugrepro -- replay \
   --capture captures/cap_1782041923400_a3f1b2c4.json \
   --adapter examples/express-api/adapter.ts
 ```
@@ -322,12 +334,12 @@ npx bugrepro replay \
 Reproduced failure: TypeError: Cannot read properties of null (reading 'discountPct')
 ```
 
-The adapter re-runs the route logic but reads the DB response (the `null` coupon) directly from the capture file. No database connection required.
+The adapter re-runs the order logic using the captured DB response (the `null` coupon) instead of hitting a real database.
 
 ### 4. Minimize to the root cause
 
 ```bash
-npx bugrepro minimize \
+npm run bugrepro -- minimize \
   --capture captures/cap_1782041923400_a3f1b2c4.json \
   --adapter examples/express-api/adapter.ts \
   --out captures/minimized.json
@@ -337,13 +349,13 @@ npx bugrepro minimize \
 { "couponCode": "SUMMER20" }
 ```
 
-`userId` and `items` turn out not to matter — the crash is entirely in the coupon lookup. The fix:
+`userId` and `items` are irrelevant. The crash is entirely in the coupon lookup. The fix:
 
 ```ts
 const discount = coupon ? coupon.discountPct / 100 : 0;
 ```
 
-> The full runnable version of this example lives in [`examples/express-api/`](examples/express-api/).
+> The full runnable version of this example is at [`examples/express-api/`](examples/express-api/).
 
 ---
 
@@ -351,7 +363,7 @@ const discount = coupon ? coupon.discountPct / 100 : 0;
 
 An adapter is a module that exports `{ adapter: { run(input, capture) } }`. It is the glue between the capture file and your actual business logic — it re-runs your code using the captured responses instead of real services.
 
-**You write one adapter per service or operation you want to be able to replay.** The example adapter at [`examples/adapter.ts`](examples/adapter.ts) is specific to the fake checkout service. In a real project you might have `adapters/checkout.ts`, `adapters/order-processor.ts`, and so on.
+**Write one adapter per service or operation you want to be able to replay.** The example adapter at [`examples/adapter.ts`](examples/adapter.ts) is specific to the fake checkout service.
 
 ```ts
 import type { ReplayAdapter } from "./src/index.js";
@@ -365,7 +377,7 @@ export const adapter: ReplayAdapter = {
 };
 ```
 
-The `makeHttpMock()` and `makeDbMock()` helpers in `src/mocks.ts` can build typed mock functions from the capture automatically:
+The `makeHttpMock()` and `makeDbMock()` helpers build typed mock functions from the capture automatically, so you don't have to search `externalCalls` by hand:
 
 ```ts
 import { makeHttpMock, makeDbMock, type ReplayAdapter } from "./src/index.js";
@@ -377,31 +389,32 @@ export const adapter: ReplayAdapter = {
 
     const payment = await http("payments.authorize", { token: (input as any).paymentToken });
     const user    = await db("users.lookup", { userId: (input as any).userId });
-    // ... your logic here
+    // ... your business logic
   },
 };
 ```
 
 ---
 
-## All CLI Commands
+## CLI Reference
 
 ```bash
 npm run bugrepro -- <command> [options]
 ```
 
-| Command | What it does |
+| Command | Description |
 |---|---|
-| `capture` | Ingest a pre-existing error + input payload into a capture file |
+| `capture` | Ingest a pre-existing error and input payload into a capture file |
 | `list` | List all capture files in the capture directory |
-| `replay` | Deterministic replay using an adapter; optionally record metrics |
+| `replay` | Deterministic replay using an adapter; optionally write replay result to a metrics file |
 | `minimize` | Shrink the failing input to the smallest version that still reproduces the failure |
 | `generate` | Write a named standalone repro script to `repros/` |
 | `ci-attach` | Same as `generate`, auto-named after the capture ID for CI artifact upload |
-| `metrics` | Read metrics NDJSON → print summary JSON + write HTML dashboard |
-| `dashboard` | Serve a live dashboard at `http://127.0.0.1:4173` |
+| `record` | Annotate a capture's metrics row with timing data (baseline vs. replay minutes) |
+| `metrics` | Read a metrics NDJSON file, print a summary, and write an HTML dashboard |
+| `dashboard` | Serve a live auto-refreshing dashboard at `http://127.0.0.1:4173` |
 
-Run any command with `--help` for all options:
+Run any command with `--help` for the full option list:
 
 ```bash
 npm run bugrepro -- replay --help
@@ -413,5 +426,5 @@ npm run bugrepro -- replay --help
 
 ```bash
 npm test          # run the test suite
-npm run build     # compile to dist/ (only needed for production use or publishing)
+npm run build     # compile to dist/
 ```
